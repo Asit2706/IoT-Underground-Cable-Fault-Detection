@@ -209,7 +209,7 @@ Step 8 → When resistor reconnected → system resets to "No Fault"
 
 **Asit Kumar Pradhan**
 - LinkedIn: [linkedin.com/in/asit-kumar-pradhan-106886343](https://www.linkedin.com/in/asit-kumar-pradhan-106886343)
-- GitHub: [github.com/yourusername](https://github.com/yourusername)
+- GitHub: [github.com/Asit2706](https://github.com/yourusername)
 
 ---
 

@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Cable Fault Detector</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Poppins',sans-serif;background:#0f1117;color:#e2e8f0;display:flex;min-height:100vh;}
+    body.fault-active{animation:flashBg 0.8s infinite;}
+    @keyframes flashBg{0%,100%{background:#0f1117;}50%{background:#1a0608;}}
+
+    /* Sidebar */
+    .sidebar{width:220px;min-height:100vh;background:#161b27;display:flex;flex-direction:column;padding:28px 0;position:fixed;left:0;top:0;bottom:0;box-shadow:4px 0 20px rgba(0,0,0,0.4);z-index:100;border-right:1px solid #1e2d45;}
+    .sidebar-logo{display:flex;align-items:center;gap:12px;padding:0 22px 28px;border-bottom:1px solid #1e2d45;}
+    .logo-circle{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#e94560,#f59e0b);display:flex;align-items:center;justify-content:center;font-size:1.2rem;box-shadow:0 4px 15px rgba(233,69,96,0.35);flex-shrink:0;}
+    .logo-text h2{font-size:0.82rem;font-weight:700;color:#e2e8f0;line-height:1.2;}
+    .logo-text p{font-size:0.62rem;color:#4a5a7a;margin-top:2px;}
+    .sidebar-section{padding:20px 22px 8px;font-size:0.6rem;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:1.5px;}
+    .nav-item{display:flex;align-items:center;gap:12px;padding:11px 22px;margin:2px 10px;border-radius:12px;cursor:pointer;font-size:0.82rem;font-weight:500;color:#4a5a7a;transition:all 0.2s;}
+    .nav-item:hover{background:rgba(255,255,255,0.05);color:#e2e8f0;}
+    .nav-item.active{background:linear-gradient(135deg,rgba(233,69,96,0.2),rgba(245,158,11,0.1));color:#e2e8f0;font-weight:600;}
+    .nav-icon{font-size:1rem;width:20px;text-align:center;}
+    .sidebar-bottom{margin-top:auto;padding:16px 22px;border-top:1px solid #1e2d45;}
+    .live-indicator{display:flex;align-items:center;gap:8px;background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:10px;padding:9px 14px;}
+    .live-dot{width:8px;height:8px;border-radius:50%;background:#34d399;animation:blink 1.2s infinite;flex-shrink:0;}
+    @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+    .live-text{font-size:0.72rem;font-weight:600;color:#34d399;}
+    .live-time{font-size:0.62rem;color:#4a5a7a;margin-top:2px;}
+
+    /* Main */
+    .main{margin-left:220px;flex:1;display:flex;flex-direction:column;}
+    .topbar{background:#161b27;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1e2d45;position:sticky;top:0;z-index:50;}
+    .topbar-left h1{font-size:1rem;font-weight:700;color:#e2e8f0;}
+    .topbar-left p{font-size:0.72rem;color:#4a5a7a;margin-top:1px;}
+    .status-pill{display:flex;align-items:center;gap:7px;border-radius:20px;padding:7px 16px;font-size:0.75rem;font-weight:600;border:1.5px solid;}
+    .status-pill.ok{background:rgba(16,185,129,0.1);border-color:rgba(16,185,129,0.3);color:#34d399;}
+    .status-pill.fault{background:rgba(233,69,96,0.1);border-color:rgba(233,69,96,0.3);color:#f87171;}
+    #alert-banner{display:none;background:linear-gradient(90deg,#e94560,#c73652);color:white;text-align:center;padding:12px;font-size:0.85rem;font-weight:700;animation:pulse 0.8s infinite;}
+    @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.75;}}
+
+    /* Pages */
+    .page{display:none;padding:24px 28px;flex:1;}
+    .page.active{display:block;}
+
+    /* Stat cards */
+    .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px;}
+    .stat-card{background:#161b27;border-radius:18px;padding:20px 22px;border:1px solid #1e2d45;display:flex;align-items:center;gap:16px;transition:transform 0.2s;}
+    .stat-card:hover{transform:translateY(-3px);}
+    .stat-icon{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;}
+    .si-blue{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 4px 14px rgba(59,130,246,0.25);}
+    .si-green{background:linear-gradient(135deg,#10b981,#059669);box-shadow:0 4px 14px rgba(16,185,129,0.25);}
+    .si-orange{background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 14px rgba(245,158,11,0.25);}
+    .si-red{background:linear-gradient(135deg,#e94560,#c73652);box-shadow:0 4px 14px rgba(233,69,96,0.25);}
+    .stat-label{font-size:0.7rem;font-weight:500;color:#4a5a7a;margin-bottom:4px;}
+    .stat-value{font-size:1.7rem;font-weight:800;line-height:1;color:#e2e8f0;}
+    .stat-value.ok{color:#34d399;}
+    .stat-value.fault{color:#f87171;}
+    .stat-sub{font-size:0.65rem;color:#374151;margin-top:4px;}
+
+    /* Charts */
+    .charts-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:22px;}
+    .chart-card{background:#161b27;border-radius:18px;padding:22px 24px;border:1px solid #1e2d45;}
+    .card-title{font-size:0.85rem;font-weight:700;color:#e2e8f0;margin-bottom:4px;}
+    .card-subtitle{font-size:0.68rem;color:#4a5a7a;margin-bottom:18px;}
+
+    /* Node grid */
+    .node-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+    .node-mini{border-radius:14px;padding:14px 16px;border:1px solid;}
+    .node-mini.na{background:rgba(59,130,246,0.08);border-color:rgba(59,130,246,0.2);}
+    .node-mini.nb{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.2);}
+    .node-mini.nc{background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.2);}
+    .node-mini.nd{background:rgba(233,69,96,0.08);border-color:rgba(233,69,96,0.2);}
+    .nm-label{font-size:0.62rem;font-weight:600;color:#4a5a7a;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:6px;}
+    .nm-val{font-size:1.5rem;font-weight:800;}
+    .nm-val.na{color:#3b82f6;} .nm-val.nb{color:#10b981;}
+    .nm-val.nc{color:#f59e0b;} .nm-val.nd{color:#e94560;}
+    .nm-km{font-size:0.62rem;color:#374151;margin-top:4px;}
+
+    /* Live readings page */
+    .live-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-bottom:22px;}
+    .live-card{background:#161b27;border-radius:18px;padding:24px;border:1px solid #1e2d45;text-align:center;}
+    .live-card .lc-label{font-size:0.7rem;font-weight:600;color:#4a5a7a;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;}
+    .live-card .lc-val{font-size:3rem;font-weight:800;line-height:1;margin-bottom:8px;}
+    .live-card .lc-sub{font-size:0.72rem;color:#4a5a7a;}
+    .lc-bar{height:8px;background:#1e2d45;border-radius:4px;margin-top:16px;overflow:hidden;}
+    .lc-bar-fill{height:100%;border-radius:4px;transition:width 0.5s;}
+
+    /* History table */
+    .history-card{background:#161b27;border-radius:18px;overflow:hidden;border:1px solid #1e2d45;}
+    .history-header{padding:18px 24px;border-bottom:1px solid #1e2d45;display:flex;align-items:center;justify-content:space-between;}
+    .event-count{background:rgba(233,69,96,0.1);color:#f87171;border:1px solid rgba(233,69,96,0.2);border-radius:20px;padding:4px 14px;font-size:0.72rem;font-weight:700;}
+    table{width:100%;border-collapse:collapse;}
+    th{padding:11px 20px;text-align:left;font-size:0.68rem;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.8px;background:#0f1117;border-bottom:1px solid #1e2d45;}
+    td{padding:13px 20px;font-size:0.8rem;border-bottom:1px solid #1a2035;color:#64748b;font-weight:500;}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:#1a2035;color:#e2e8f0;}
+    .badge{display:inline-flex;align-items:center;gap:4px;padding:4px 12px;border-radius:8px;font-size:0.68rem;font-weight:700;}
+    .badge.fault{background:rgba(233,69,96,0.1);border:1px solid rgba(233,69,96,0.2);color:#f87171;}
+    .badge.ok{background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);color:#34d399;}
+    .km-cell{font-weight:700;color:#e2e8f0;}
+    .no-history{text-align:center;color:#374151;padding:40px;font-size:0.82rem;}
+
+    /* Analytics page */
+    .analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+    .analytics-card{background:#161b27;border-radius:18px;padding:22px 24px;border:1px solid #1e2d45;}
+
+    /* About page */
+    .about-card{background:#161b27;border-radius:18px;padding:28px;border:1px solid #1e2d45;margin-bottom:16px;}
+    .about-card h3{font-size:1rem;font-weight:700;color:#e2e8f0;margin-bottom:12px;}
+    .about-card p{font-size:0.82rem;color:#64748b;line-height:1.8;}
+    .spec-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e2d45;font-size:0.82rem;}
+    .spec-row:last-child{border-bottom:none;}
+    .spec-label{color:#4a5a7a;font-weight:500;}
+    .spec-val{color:#e2e8f0;font-weight:600;}
+
+    /* Popup */
+    #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);backdrop-filter:blur(8px);z-index:9998;}
+    #fault-popup{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#161b27;border:1px solid rgba(233,69,96,0.3);border-radius:24px;padding:40px 48px;z-index:9999;text-align:center;min-width:300px;box-shadow:0 20px 60px rgba(233,69,96,0.2);}
+    .popup-emoji{font-size:3.5rem;margin-bottom:12px;}
+    #fault-popup h2{font-size:1.5rem;font-weight:800;color:#f87171;margin-bottom:6px;}
+    #fault-popup p{color:#4a5a7a;font-size:0.82rem;}
+    .popup-km{font-size:4rem;font-weight:800;color:#f87171;margin:12px 0;line-height:1;}
+    #fault-popup button{margin-top:20px;background:#e94560;color:white;border:none;padding:12px 36px;border-radius:12px;font-size:0.85rem;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;}
+
+    .page-heading{font-size:1.2rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;}
+    .page-sub{font-size:0.75rem;color:#4a5a7a;margin-bottom:22px;}
+  </style>
+</head>
+<body>
+
+<div id="overlay" onclick="dismissPopup()"></div>
+<div id="fault-popup">
+  <div class="popup-emoji">⚠️</div>
+  <h2>Fault Detected!</h2>
+  <p>Underground cable fault at</p>
+  <div class="popup-km" id="popup-km">— KM</div>
+  <p>Dispatch maintenance team immediately</p>
+  <button onclick="dismissPopup()">Acknowledge</button>
+</div>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-circle">⚡</div>
+    <div class="logo-text">
+      <h2>Cable Fault<br>Detector</h2>
+      <p>IoT Monitoring</p>
+    </div>
+  </div>
+  <div class="sidebar-section">Main Menu</div>
+  <div class="nav-item active" onclick="showPage('dashboard',this)"><span class="nav-icon">🏠</span> Dashboard</div>
+  <div class="nav-item" onclick="showPage('live',this)"><span class="nav-icon">📡</span> Live Readings</div>
+  <div class="nav-item" onclick="showPage('history',this)"><span class="nav-icon">📋</span> Fault History</div>
+  <div class="nav-item" onclick="showPage('analytics',this)"><span class="nav-icon">📈</span> Analytics</div>
+  <div class="sidebar-section">System</div>
+  <div class="nav-item" onclick="showPage('about',this)"><span class="nav-icon">ℹ️</span> About</div>
+  <div class="sidebar-bottom">
+    <div class="live-indicator">
+      <div class="live-dot"></div>
+      <div>
+        <div class="live-text">System Live</div>
+        <div class="live-time" id="sidebar-time">--:--:--</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-left">
+      <h1 id="page-title">System Dashboard</h1>
+      <p id="page-desc">Real-time underground cable fault monitoring</p>
+    </div>
+    <div class="status-pill ok" id="status-pill">
+      <span>●</span><span id="status-pill-text">System OK</span>
+    </div>
+  </div>
+  <div id="alert-banner">⚠️ &nbsp; Cable Fault at <span id="alert-km">?</span> KM &nbsp;—&nbsp; Immediate Action Required!</div>
+
+  <!-- Dashboard Page -->
+  <div class="page active" id="page-dashboard">
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-icon si-blue">🔌</div>
+        <div><div class="stat-label">System Status</div><div class="stat-value ok" id="status-text">OK</div><div class="stat-sub">Live from ESP32</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon si-red">📍</div>
+        <div><div class="stat-label">Fault Location</div><div class="stat-value" id="fault-km-text" style="color:#3b82f6">—</div><div class="stat-sub">From monitoring unit</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon si-orange">📋</div>
+        <div><div class="stat-label">Faults Logged</div><div class="stat-value" id="fault-count" style="color:#f59e0b">0</div><div class="stat-sub">Total events</div></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon si-green">🕐</div>
+        <div><div class="stat-label">Last Updated</div><div class="stat-value" id="last-updated" style="font-size:1.1rem;color:#34d399">—</div><div class="stat-sub">Local time</div></div>
+      </div>
+    </div>
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="card-title">📈 Live Voltage Waveform</div>
+        <div class="card-subtitle">ADC readings from all 4 cable segments (0–4095)</div>
+        <canvas id="voltageChart" height="110"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">📡 Segment Readings</div>
+        <div class="card-subtitle">Current ADC values per node</div>
+        <div class="node-grid">
+          <div class="node-mini na"><div class="nm-label">Node A · 1KM</div><div class="nm-val na" id="node-a">—</div><div class="nm-km">GPIO 34</div></div>
+          <div class="node-mini nb"><div class="nm-label">Node B · 2KM</div><div class="nm-val nb" id="node-b">—</div><div class="nm-km">GPIO 35</div></div>
+          <div class="node-mini nc"><div class="nm-label">Node C · 3KM</div><div class="nm-val nc" id="node-c">—</div><div class="nm-km">GPIO 32</div></div>
+          <div class="node-mini nd"><div class="nm-label">Node D · 4KM</div><div class="nm-val nd" id="node-d">—</div><div class="nm-km">GPIO 33</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Readings Page -->
+  <div class="page" id="page-live">
+    <div class="page-heading">📡 Live Readings</div>
+    <div class="page-sub">Real-time ADC voltage readings from each cable segment</div>
+    <div class="live-grid">
+      <div class="live-card">
+        <div class="lc-label">Node A — Segment 1 KM</div>
+        <div class="lc-val" id="live-a" style="color:#3b82f6">—</div>
+        <div class="lc-sub">GPIO 34 · Baseline: 2926</div>
+        <div class="lc-bar"><div class="lc-bar-fill" id="bar-a" style="width:0%;background:#3b82f6"></div></div>
+      </div>
+      <div class="live-card">
+        <div class="lc-label">Node B — Segment 2 KM</div>
+        <div class="lc-val" id="live-b" style="color:#10b981">—</div>
+        <div class="lc-sub">GPIO 35 · Baseline: 1889</div>
+        <div class="lc-bar"><div class="lc-bar-fill" id="bar-b" style="width:0%;background:#10b981"></div></div>
+      </div>
+      <div class="live-card">
+        <div class="lc-label">Node C — Segment 3 KM</div>
+        <div class="lc-val" id="live-c" style="color:#f59e0b">—</div>
+        <div class="lc-sub">GPIO 32 · Baseline: 860</div>
+        <div class="lc-bar"><div class="lc-bar-fill" id="bar-c" style="width:0%;background:#f59e0b"></div></div>
+      </div>
+      <div class="live-card">
+        <div class="lc-label">Node D — Segment 4 KM</div>
+        <div class="lc-val" id="live-d" style="color:#e94560">—</div>
+        <div class="lc-sub">GPIO 33 · Baseline: ~0</div>
+        <div class="lc-bar"><div class="lc-bar-fill" id="bar-d" style="width:0%;background:#e94560"></div></div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="card-title">📈 Live Waveform</div>
+      <div class="card-subtitle">All 4 nodes — updates every second</div>
+      <canvas id="voltageChart2" height="100"></canvas>
+    </div>
+  </div>
+
+  <!-- Fault History Page -->
+  <div class="page" id="page-history">
+    <div class="page-heading">📋 Fault History</div>
+    <div class="page-sub">Complete log of all detected cable fault events</div>
+    <div class="history-card">
+      <div class="history-header">
+        <div>
+          <div class="card-title">🗂️ Fault Event Log</div>
+          <div class="card-subtitle" style="margin-bottom:0">Every fault is logged once — resets when repaired</div>
+        </div>
+        <div class="event-count"><span id="fault-count-badge">0</span> Total Events</div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Timestamp (s)</th><th>Status</th><th>Fault Location</th><th>Node A</th><th>Node B</th><th>Node C</th></tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="7" class="no-history">✅ No fault events recorded — System running normally</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Analytics Page -->
+  <div class="page" id="page-analytics">
+    <div class="page-heading">📈 Analytics</div>
+    <div class="page-sub">Fault statistics and system performance overview</div>
+    <div class="analytics-grid">
+      <div class="analytics-card">
+        <div class="card-title">Total Faults by Location</div>
+        <div class="card-subtitle">Which segment faults most often</div>
+        <canvas id="faultBarChart" height="180"></canvas>
+      </div>
+      <div class="analytics-card">
+        <div class="card-title">System Health Summary</div>
+        <div class="card-subtitle">Current node status overview</div>
+        <div style="margin-top:10px">
+          <div class="spec-row"><span class="spec-label">Node A (1KM)</span><span class="spec-val" id="an-a" style="color:#3b82f6">—</span></div>
+          <div class="spec-row"><span class="spec-label">Node B (2KM)</span><span class="spec-val" id="an-b" style="color:#10b981">—</span></div>
+          <div class="spec-row"><span class="spec-label">Node C (3KM)</span><span class="spec-val" id="an-c" style="color:#f59e0b">—</span></div>
+          <div class="spec-row"><span class="spec-label">Node D (4KM)</span><span class="spec-val" id="an-d" style="color:#e94560">—</span></div>
+          <div class="spec-row"><span class="spec-label">Total Faults Logged</span><span class="spec-val" id="an-total">0</span></div>
+          <div class="spec-row"><span class="spec-label">Current Status</span><span class="spec-val" id="an-status" style="color:#34d399">OK</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Page -->
+  <div class="page" id="page-about">
+    <div class="page-heading">ℹ️ About This System</div>
+    <div class="page-sub">Project information and component specifications</div>
+    <div class="about-card">
+      <h3>⚡ IoT-Based Underground Cable Fault Detection System</h3>
+      <p>This system detects and locates faults in underground electrical cables using a voltage divider network simulated by resistors. When a fault occurs (cable cut or damage), the voltage at that segment drops below the calibrated baseline, triggering an alert on the OLED display and cloud dashboard.</p>
+    </div>
+    <div class="about-card">
+      <h3>🔧 Component Specifications</h3>
+      <div class="spec-row"><span class="spec-label">Microcontroller</span><span class="spec-val">ESP32 Dev Module</span></div>
+      <div class="spec-row"><span class="spec-label">Display</span><span class="spec-val">OLED SSD1306 128×64 (I2C)</span></div>
+      <div class="spec-row"><span class="spec-label">Cable Simulation</span><span class="spec-val">4 × Resistors in series</span></div>
+      <div class="spec-row"><span class="spec-label">ADC Resolution</span><span class="spec-val">12-bit (0–4095)</span></div>
+      <div class="spec-row"><span class="spec-label">Supply Voltage</span><span class="spec-val">3.3V</span></div>
+      <div class="spec-row"><span class="spec-label">Cloud Platform</span><span class="spec-val">Firebase Realtime Database</span></div>
+      <div class="spec-row"><span class="spec-label">Update Interval</span><span class="spec-val">Every 3 seconds</span></div>
+      <div class="spec-row"><span class="spec-label">Detection Method</span><span class="spec-val">Voltage Drop (Murray Loop Principle)</span></div>
+    </div>
+    <div class="about-card">
+      <h3>📍 GPIO Pin Mapping</h3>
+      <div class="spec-row"><span class="spec-label">Node A (1 KM)</span><span class="spec-val">GPIO 34</span></div>
+      <div class="spec-row"><span class="spec-label">Node B (2 KM)</span><span class="spec-val">GPIO 35</span></div>
+      <div class="spec-row"><span class="spec-label">Node C (3 KM)</span><span class="spec-val">GPIO 32</span></div>
+      <div class="spec-row"><span class="spec-label">Node D (4 KM)</span><span class="spec-val">GPIO 33</span></div>
+      <div class="spec-row"><span class="spec-label">OLED SDA</span><span class="spec-val">GPIO 21</span></div>
+      <div class="spec-row"><span class="spec-label">OLED SCL</span><span class="spec-val">GPIO 22</span></div>
+    </div>
+  </div>
+
+</div><!-- end main -->
+
+<script>
+  const firebaseConfig={apiKey:"AIzaSyB2f7W3aVHqaoqBxdQoRY4yK5Fdu9FjSw0",authDomain:"cable-fault-detector-64c34.firebaseapp.com",databaseURL:"https://cable-fault-detector-64c34-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"cable-fault-detector-64c34",storageBucket:"cable-fault-detector-64c34.firebasestorage.app",messagingSenderId:"291302532611",appId:"1:291302532611:web:8b5abd831c20e6bed49036"};
+  firebase.initializeApp(firebaseConfig);
+  const db=firebase.database();
+
+  // Clock
+  setInterval(()=>{document.getElementById('sidebar-time').textContent=new Date().toLocaleTimeString();},1000);
+
+  // Page navigation
+  const pageTitles={
+    dashboard:['System Dashboard','Real-time underground cable fault monitoring'],
+    live:['Live Readings','Real-time ADC values from all 4 nodes'],
+    history:['Fault History','Complete log of all fault events'],
+    analytics:['Analytics','Fault statistics and system performance'],
+    about:['About','Project information and specifications']
+  };
+
+  function showPage(id, el) {
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.getElementById('page-'+id).classList.add('active');
+    el.classList.add('active');
+    document.getElementById('page-title').textContent=pageTitles[id][0];
+    document.getElementById('page-desc').textContent=pageTitles[id][1];
+  }
+
+  // Sound
+  let audioCtx=null;
+  function playAlert(){try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();for(let i=0;i<3;i++){const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);o.type='square';o.frequency.value=880;g.gain.setValueAtTime(0.3,audioCtx.currentTime+i*0.4);g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+i*0.4+0.3);o.start(audioCtx.currentTime+i*0.4);o.stop(audioCtx.currentTime+i*0.4+0.3);}}catch(e){}}
+
+  // Popup
+  let popupShown=false;
+  function showPopup(km){if(popupShown)return;popupShown=true;document.getElementById('popup-km').textContent=km+' KM';document.getElementById('fault-popup').style.display='block';document.getElementById('overlay').style.display='block';}
+  function dismissPopup(){popupShown=false;document.getElementById('fault-popup').style.display='none';document.getElementById('overlay').style.display='none';}
+
+  // Chart 1 (dashboard)
+  const ctx1=document.getElementById('voltageChart').getContext('2d');
+  const maxPts=25,labels=[],dA=[],dB=[],dC=[],dD=[];
+  const chartOpts={responsive:true,animation:{duration:300},plugins:{legend:{labels:{color:'#4a5a7a',font:{size:11,family:'Poppins'},boxWidth:16,padding:16}}},scales:{x:{ticks:{color:'#374151',maxTicksLimit:8,font:{size:10}},grid:{color:'#1a2035'}},y:{min:0,max:4095,ticks:{color:'#374151',font:{size:10}},grid:{color:'#1a2035'}}}};
+  const chart1=new Chart(ctx1,{type:'line',data:{labels,datasets:[
+    {label:'Node A (1KM)',data:dA,borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,0.06)',tension:0.4,fill:true,pointRadius:0,borderWidth:2.5},
+    {label:'Node B (2KM)',data:dB,borderColor:'#10b981',backgroundColor:'rgba(16,185,129,0.06)',tension:0.4,fill:true,pointRadius:0,borderWidth:2.5},
+    {label:'Node C (3KM)',data:dC,borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.06)',tension:0.4,fill:true,pointRadius:0,borderWidth:2.5},
+    {label:'Node D (4KM)',data:dD,borderColor:'#e94560',backgroundColor:'rgba(233,69,96,0.06)',tension:0.4,fill:true,pointRadius:0,borderWidth:2.5},
+  ]},options:chartOpts});
+
+  // Chart 2 (live readings page)
+  const ctx2=document.getElementById('voltageChart2').getContext('2d');
+  const labels2=[],dA2=[],dB2=[],dC2=[],dD2=[];
+  const chart2=new Chart(ctx2,{type:'line',data:{labels:labels2,datasets:[
+    {label:'Node A',data:dA2,borderColor:'#3b82f6',tension:0.4,fill:false,pointRadius:0,borderWidth:2.5},
+    {label:'Node B',data:dB2,borderColor:'#10b981',tension:0.4,fill:false,pointRadius:0,borderWidth:2.5},
+    {label:'Node C',data:dC2,borderColor:'#f59e0b',tension:0.4,fill:false,pointRadius:0,borderWidth:2.5},
+    {label:'Node D',data:dD2,borderColor:'#e94560',tension:0.4,fill:false,pointRadius:0,borderWidth:2.5},
+  ]},options:chartOpts});
+
+  // Bar chart for analytics
+  const faultCounts={1:0,2:0,3:0,4:0};
+  const ctxBar=document.getElementById('faultBarChart').getContext('2d');
+  const barChart=new Chart(ctxBar,{type:'bar',data:{labels:['1 KM','2 KM','3 KM','4 KM'],datasets:[{label:'Faults',data:[0,0,0,0],backgroundColor:['rgba(59,130,246,0.7)','rgba(16,185,129,0.7)','rgba(245,158,11,0.7)','rgba(233,69,96,0.7)'],borderRadius:8}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#374151'},grid:{display:false}},y:{ticks:{color:'#374151',stepSize:1},grid:{color:'#1a2035'},beginAtZero:true}}}});
+
+  function pushChart(l,a,b,c,d){
+    labels.push(l);dA.push(a);dB.push(b);dC.push(c);dD.push(d);
+    labels2.push(l);dA2.push(a);dB2.push(b);dC2.push(c);dD2.push(d);
+    if(labels.length>maxPts){labels.shift();dA.shift();dB.shift();dC.shift();dD.shift();}
+    if(labels2.length>maxPts){labels2.shift();dA2.shift();dB2.shift();dC2.shift();dD2.shift();}
+    chart1.update();chart2.update();
+  }
+
+  let prevFault=0;
+
+  db.ref('/current').on('value',snap=>{
+    const d=snap.val();if(!d)return;
+    const faultKm=d.fault_km||0,status=d.status||'OK';
+    const a=d.node_a||0,b=d.node_b||0,c=d.node_c||0,dn=d.node_d||0;
+    const now=new Date().toLocaleTimeString();
+
+    // Dashboard
+    document.getElementById('status-text').textContent=status;
+    document.getElementById('status-text').className='stat-value '+(status==='OK'?'ok':'fault');
+    const pill=document.getElementById('status-pill');pill.className='status-pill '+(status==='OK'?'ok':'fault');
+    document.getElementById('status-pill-text').textContent=status==='OK'?'System OK':'FAULT DETECTED';
+    const fe=document.getElementById('fault-km-text');fe.textContent=faultKm>0?faultKm+' KM':'—';fe.style.color=faultKm>0?'#f87171':'#3b82f6';
+    document.getElementById('node-a').textContent=a;document.getElementById('node-b').textContent=b;
+    document.getElementById('node-c').textContent=c;document.getElementById('node-d').textContent=dn;
+    document.getElementById('last-updated').textContent=now;
+
+    // Live readings page
+    document.getElementById('live-a').textContent=a;
+    document.getElementById('live-b').textContent=b;
+    document.getElementById('live-c').textContent=c;
+    document.getElementById('live-d').textContent=dn;
+    document.getElementById('bar-a').style.width=(a/4095*100)+'%';
+    document.getElementById('bar-b').style.width=(b/4095*100)+'%';
+    document.getElementById('bar-c').style.width=(c/4095*100)+'%';
+    document.getElementById('bar-d').style.width=(dn/4095*100)+'%';
+
+    // Analytics
+    document.getElementById('an-a').textContent=a;document.getElementById('an-b').textContent=b;
+    document.getElementById('an-c').textContent=c;document.getElementById('an-d').textContent=dn;
+    document.getElementById('an-status').textContent=status;
+    document.getElementById('an-status').style.color=status==='OK'?'#34d399':'#f87171';
+
+    // Alerts
+    if(faultKm>0&&prevFault===0){document.body.classList.add('fault-active');playAlert();showPopup(faultKm);}
+    if(faultKm===0){document.body.classList.remove('fault-active');dismissPopup();}
+    prevFault=faultKm;
+
+    const banner=document.getElementById('alert-banner');
+    banner.style.display=faultKm>0?'block':'none';
+    if(faultKm>0)document.getElementById('alert-km').textContent=faultKm;
+
+    pushChart(now,a,b,c,dn);
+  });
+
+  db.ref('/history').on('value',snap=>{
+    const data=snap.val();
+    const tbody=document.getElementById('history-body');
+    const countEl=document.getElementById('fault-count');
+    const badgeEl=document.getElementById('fault-count-badge');
+    const anTotal=document.getElementById('an-total');
+
+    if(!data){
+      tbody.innerHTML='<tr><td colspan="7" class="no-history">✅ No fault events — System running normally</td></tr>';
+      countEl.textContent='0';badgeEl.textContent='0';anTotal.textContent='0';
+      barChart.data.datasets[0].data=[0,0,0,0];barChart.update();
+      return;
+    }
+
+    const entries=Object.entries(data).reverse();
+    countEl.textContent=entries.length;badgeEl.textContent=entries.length;anTotal.textContent=entries.length;
+
+    // Update bar chart
+    const counts=[0,0,0,0];
+    entries.forEach(([ts,v])=>{if(v.fault_km>=1&&v.fault_km<=4)counts[v.fault_km-1]++;});
+    barChart.data.datasets[0].data=counts;barChart.update();
+
+    tbody.innerHTML=entries.map(([ts,v],i)=>`
+      <tr>
+        <td>${entries.length-i}</td>
+        <td>${ts}s</td>
+        <td><span class="badge fault">⚠ Fault</span></td>
+        <td class="km-cell">📍 ${v.fault_km} KM</td>
+        <td>${v.node_a}</td><td>${v.node_b}</td><td>${v.node_c}</td>
+      </tr>`).join('');
+  });
+</script>
+</body>
+</html>
